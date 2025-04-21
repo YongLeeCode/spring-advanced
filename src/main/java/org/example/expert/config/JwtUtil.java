@@ -16,6 +16,8 @@ import java.security.Key;
 import java.util.Base64;
 import java.util.Date;
 
+import javax.crypto.SecretKey;
+
 @Slf4j(topic = "JwtUtil")
 @Component
 public class JwtUtil {
@@ -25,27 +27,30 @@ public class JwtUtil {
 
     @Value("${jwt.secret.key}")
     private String secretKey;
-    private Key key;
+
     private final SignatureAlgorithm signatureAlgorithm = SignatureAlgorithm.HS256;
+
+    private SecretKey getSecret() {
+        return Keys.hmacShaKeyFor(secretKey.getBytes());
+    }
 
     @PostConstruct
     public void init() {
-        byte[] bytes = Base64.getDecoder().decode(secretKey);
-        key = Keys.hmacShaKeyFor(bytes);
+        // key = Keys.hmacShaKeyFor(secretKey.getBytes());
     }
 
     public String createToken(Long userId, String email, UserRole userRole) {
         Date date = new Date();
 
         return BEARER_PREFIX +
-                Jwts.builder()
-                        .setSubject(String.valueOf(userId))
-                        .claim("email", email)
-                        .claim("userRole", userRole)
-                        .setExpiration(new Date(date.getTime() + TOKEN_TIME))
-                        .setIssuedAt(date) // 발급일
-                        .signWith(key, signatureAlgorithm) // 암호화 알고리즘
-                        .compact();
+            Jwts.builder()
+                .setSubject(String.valueOf(userId))
+                .claim("email", email)
+                .claim("userRole", userRole)
+                .setExpiration(new Date(date.getTime() + TOKEN_TIME))
+                .setIssuedAt(date) // 발급일
+                .signWith(getSecret(), signatureAlgorithm) // 암호화 알고리즘
+                .compact();
     }
 
     public String substringToken(String tokenValue) {
@@ -57,9 +62,15 @@ public class JwtUtil {
 
     public Claims extractClaims(String token) {
         return Jwts.parserBuilder()
-                .setSigningKey(key)
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
+            .setSigningKey(getSecret())
+            .build()
+            .parseClaimsJws(token)
+            .getBody();
+    }
+
+    public boolean hasAdminRole(String token) {
+        Claims claims = extractClaims(token);
+        String roles = claims.get("userRole", String.class);
+        return roles != null && roles.contains("ADMIN");
     }
 }
